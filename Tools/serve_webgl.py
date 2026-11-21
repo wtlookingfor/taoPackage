@@ -24,6 +24,7 @@ import webbrowser
 EXTRA_MIME = {
     ".wasm": "application/wasm",
     ".data": "application/octet-stream",
+    ".unityweb": "application/octet-stream",
     ".js": "text/javascript",
     ".mjs": "text/javascript",
     ".json": "application/json",
