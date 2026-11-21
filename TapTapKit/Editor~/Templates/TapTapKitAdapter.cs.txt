@@ -1,0 +1,398 @@
+// 由 TapTapKit 安装器生成（Tools/TapTapKit/安装器），重新生成会覆盖本文件。
+// 各 SDK 的调用都写在 #if 里：没装对应的 SDK（没定义符号）时这里不会编译到那些代码。
+using System;
+using System.Threading.Tasks;
+using UnityEngine;
+using WeChatGame.TapTapKit;
+
+#if TAPTAP_SDK
+using TapSDK.Core;
+using TapSDK.Login;
+#endif
+
+#if TAPTAP_ADN
+using Dirichlet.Ad;
+#endif
+
+namespace TapTapKit.Generated
+{
+    public class TapTapKitAdapter : TapTapAdapterBase
+    {
+        public override bool IsMiniGamePlatform
+        {
+            get
+            {
+#if TAPTAP_MINIGAME
+                return true;
+#else
+                return false;
+#endif
+            }
+        }
+
+        // ---------------- 初始化 ----------------
+
+        public override void Init(TapTapConfig config, Action<bool, string> onComplete)
+        {
+            bool initSdk = false;
+            bool initAdn = false;
+
+#if TAPTAP_SDK
+            initSdk = !string.IsNullOrEmpty(config.clientId) && !string.IsNullOrEmpty(config.clientToken);
+#endif
+
+#if TAPTAP_ADN
+            initAdn = config.mediaId > 0 && !string.IsNullOrEmpty(config.mediaKey);
+#endif
+
+            if (!initSdk && !initAdn)
+            {
+                string reason = "没有可初始化的 SDK（TapSDK / TapADN 未安装或未填配置）";
+                Debug.LogWarning("[TapTapKit] " + reason);
+                onComplete?.Invoke(false, reason);
+                return;
+            }
+
+            int pending = (initSdk ? 1 : 0) + (initAdn ? 1 : 0);
+            bool allOk = true;
+            string firstError = null;
+
+            Action<bool, string> step = (ok, error) =>
+            {
+                if (!ok)
+                {
+                    allOk = false;
+                    if (firstError == null)
+                    {
+                        firstError = error;
+                    }
+                }
+
+                pending--;
+                if (pending > 0)
+                {
+                    return;
+                }
+
+                onComplete?.Invoke(allOk, firstError);
+            };
+
+            InitModules(config, initSdk, initAdn, step);
+        }
+
+        void InitModules(TapTapConfig config, bool initSdk, bool initAdn, Action<bool, string> onComplete)
+        {
+#if TAPTAP_SDK
+            if (initSdk)
+            {
+                InitTapSdk(config, onComplete);
+            }
+#endif
+
+#if TAPTAP_ADN
+            if (initAdn)
+            {
+                InitTapAdn(config, onComplete);
+            }
+#endif
+        }
+
+#if TAPTAP_SDK
+        void InitTapSdk(TapTapConfig config, Action<bool, string> onComplete)
+        {
+            var options = new TapTapSdkOptions
+            {
+                clientId = config.clientId,
+                clientToken = config.clientToken,
+                region = config.region == TapTapRegion.CN ? TapTapRegionType.CN : TapTapRegionType.Overseas,
+                enableLog = config.enableLog,
+            };
+
+            TapTapSDK.AddInitCallback(new SdkInitCallback(onComplete));
+            TapTapSDK.Init(options);
+        }
+
+        sealed class SdkInitCallback : ITapInitCallback
+        {
+            readonly Action<bool, string> m_onComplete;
+
+            public SdkInitCallback(Action<bool, string> onComplete)
+            {
+                m_onComplete = onComplete;
+            }
+
+            public void OnInitSuccess()
+            {
+                m_onComplete?.Invoke(true, null);
+            }
+
+            public void OnInitFail(int errorCode, string errorMsg)
+            {
+                m_onComplete?.Invoke(false, $"TapSDK 初始化失败 {errorCode}: {errorMsg}");
+            }
+        }
+#endif
+
+#if TAPTAP_ADN
+        void InitTapAdn(TapTapConfig config, Action<bool, string> onComplete)
+        {
+            var builder = new DirichletAdConfig.Builder()
+                .WithMediaId(config.mediaId)
+                .WithMediaKey(config.mediaKey)
+                .WithMediaName(Application.productName)
+                .EnableDebug(config.adnDebug)
+                .AllowIDFAAccess(config.allowIdfaAccess)
+                .ShakeEnabled(config.shakeEnabled);
+
+            DirichletAdSdk.Init(
+                builder.Build(),
+                result => onComplete?.Invoke(true, null),
+                error => onComplete?.Invoke(false, $"TapADN 初始化失败 {error.Code}: {error.Message}"));
+        }
+#endif
+
+        // ---------------- 登录 ----------------
+
+        public override void Login(string[] scopes, Action<TapTapLoginResult> onComplete)
+        {
+#if TAPTAP_SDK
+            LoginAsync(scopes, onComplete);
+#else
+            onComplete?.Invoke(TapTapLoginResult.Failed("TapSDK 未安装"));
+#endif
+        }
+
+        public override void GetCurrentAccount(Action<TapTapAccountInfo> onComplete)
+        {
+#if TAPTAP_SDK
+            GetCurrentAccountAsync(onComplete);
+#else
+            onComplete?.Invoke(null);
+#endif
+        }
+
+        public override void Logout()
+        {
+#if TAPTAP_SDK
+            TapTapLogin.Instance.Logout();
+#endif
+        }
+
+#if TAPTAP_SDK
+        async void LoginAsync(string[] scopes, Action<TapTapLoginResult> onComplete)
+        {
+            try
+            {
+                string[] useScopes = scopes != null && scopes.Length > 0
+                    ? scopes
+                    : new[] { TapTapLogin.TAP_LOGIN_SCOPE_PUBLIC_PROFILE };
+
+                TapTapAccount account = await TapTapLogin.Instance.LoginWithScopes(useScopes);
+                onComplete?.Invoke(TapTapLoginResult.Success(ToInfo(account)));
+            }
+            catch (TaskCanceledException)
+            {
+                onComplete?.Invoke(TapTapLoginResult.Canceled());
+            }
+            catch (Exception e)
+            {
+                onComplete?.Invoke(TapTapLoginResult.Failed(e.Message));
+            }
+        }
+
+        async void GetCurrentAccountAsync(Action<TapTapAccountInfo> onComplete)
+        {
+            try
+            {
+                TapTapAccount account = await TapTapLogin.Instance.GetCurrentTapAccount();
+                onComplete?.Invoke(ToInfo(account));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[TapTapKit] 获取当前账号失败：{e.Message}");
+                onComplete?.Invoke(null);
+            }
+        }
+
+        static TapTapAccountInfo ToInfo(TapTapAccount account)
+        {
+            if (account == null)
+            {
+                return null;
+            }
+
+            // accessToken 需要上传服务端时，可以直接用 account.accessToken
+            return new TapTapAccountInfo
+            {
+                openId = account.openId,
+                unionId = account.unionId,
+                name = account.name,
+                avatar = account.avatar,
+            };
+        }
+#endif
+
+        // ---------------- 广告 ----------------
+
+#if TAPTAP_ADN
+        DirichletAdNative m_adNative;
+        DirichletBannerAd m_bannerAd;
+        DirichletRewardVideoAd m_rewardVideoAd;
+        bool m_rewarded;
+
+        DirichletAdNative AdNative
+        {
+            get
+            {
+                if (m_adNative == null)
+                {
+                    m_adNative = DirichletAdManager.CreateAdNative();
+                }
+
+                return m_adNative;
+            }
+        }
+
+        static DirichletAdRequest BuildRequest(long spaceId)
+        {
+            return new DirichletAdRequest.Builder().WithSpaceId(spaceId).Build();
+        }
+
+        bool InitAdnGuard(long spaceId, Action<bool> onComplete)
+        {
+            if (!DirichletAdSdk.IsInitialized)
+            {
+                Debug.LogWarning("[TapTapKit] TapADN 还没初始化完成，广告请求被忽略");
+                onComplete?.Invoke(false);
+                return false;
+            }
+
+            if (spaceId <= 0)
+            {
+                Debug.LogWarning("[TapTapKit] 广告位 SpaceId 无效：" + spaceId);
+                onComplete?.Invoke(false);
+                return false;
+            }
+
+            return true;
+        }
+#endif
+
+        public override void ShowRewardVideo(long spaceId, Action<bool> onComplete)
+        {
+#if TAPTAP_ADN
+            if (!InitAdnGuard(spaceId, onComplete))
+            {
+                return;
+            }
+
+            m_rewarded = false;
+            DirichletAdRequest request = BuildRequest(spaceId);
+            AdNative.LoadRewardVideoAd(
+                request,
+                ad =>
+                {
+                    m_rewardVideoAd = ad;
+                    ad.RewardVerified += args =>
+                    {
+                        if (args.IsVerified)
+                        {
+                            m_rewarded = true;
+                        }
+                    };
+                    ad.Closed += () =>
+                    {
+                        bool rewarded = m_rewarded;
+                        ad.Destroy();
+                        if (ReferenceEquals(m_rewardVideoAd, ad))
+                        {
+                            m_rewardVideoAd = null;
+                        }
+
+                        onComplete?.Invoke(rewarded);
+                    };
+                    ad.Show();
+                },
+                error => OnAdFailed("激励视频", error, onComplete));
+#else
+            onComplete?.Invoke(false);
+#endif
+        }
+
+        public override void ShowInterstitial(long spaceId, Action<bool> onComplete)
+        {
+#if TAPTAP_ADN
+            if (!InitAdnGuard(spaceId, onComplete))
+            {
+                return;
+            }
+
+            DirichletAdRequest request = BuildRequest(spaceId);
+            AdNative.LoadInterstitialAd(
+                request,
+                ad =>
+                {
+                    ad.Closed += () => ad.Destroy();
+                    ad.Show();
+                    onComplete?.Invoke(true);
+                },
+                error => OnAdFailed("插屏", error, onComplete));
+#else
+            onComplete?.Invoke(false);
+#endif
+        }
+
+        public override void ShowBanner(long spaceId, TapTapBannerPosition position, Action<bool> onComplete)
+        {
+#if TAPTAP_ADN
+            if (!InitAdnGuard(spaceId, onComplete))
+            {
+                return;
+            }
+
+            DirichletAdRequest request = BuildRequest(spaceId);
+            AdNative.LoadBannerAd(
+                request,
+                ad =>
+                {
+                    if (m_bannerAd != null)
+                    {
+                        m_bannerAd.Destroy();
+                    }
+
+                    m_bannerAd = ad;
+                    ad.Show(new DirichletAdShowOptions
+                    {
+                        BannerAlignment = position == TapTapBannerPosition.Top
+                            ? DirichletBannerAlignment.Top
+                            : DirichletBannerAlignment.Bottom,
+                        BannerOffset = 0,
+                    });
+                    onComplete?.Invoke(true);
+                },
+                error => OnAdFailed("Banner", error, onComplete));
+#else
+            onComplete?.Invoke(false);
+#endif
+        }
+
+        public override void HideBanner()
+        {
+#if TAPTAP_ADN
+            if (m_bannerAd != null)
+            {
+                m_bannerAd.Destroy();
+                m_bannerAd = null;
+            }
+#endif
+        }
+
+#if TAPTAP_ADN
+        static void OnAdFailed(string tag, DirichletError error, Action<bool> onComplete)
+        {
+            Debug.LogWarning($"[TapTapKit] {tag}加载失败 {error.Code}: {error.Message}");
+            onComplete?.Invoke(false);
+        }
+#endif
+    }
+}

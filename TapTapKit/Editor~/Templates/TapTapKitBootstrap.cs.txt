@@ -1,0 +1,15 @@
+// 由 TapTapKit 安装器生成（Tools/TapTapKit/安装器），重新生成会覆盖本文件。
+// 这个文件没有 asmdef，会进 Assembly-CSharp，所以能引用 TapSDK / TapADN 的程序集；
+// 它只做一件事：把生成的适配器注册给包里的 TapTapManager。
+using UnityEngine;
+using WeChatGame.TapTapKit;
+using TapTapKit.Generated;
+
+public static class TapTapKitBootstrap
+{
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    static void RegisterAdapter()
+    {
+        TapTapManager.RegisterAdapter(new TapTapKitAdapter());
+    }
+}
