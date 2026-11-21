@@ -27,12 +27,23 @@
 | 脚本 | 作用 |
 |---|---|
 | `Install-AIGameDevMcp.ps1` | 给工程装上 AI Game Developer（`com.ivanmurzak.unity.mcp`）：加依赖 + 加 OpenUPM scoped registry（`com.ivanmurzak` / `extensions.unity`） |
+| `serve_webgl.py` | 本地预览 Unity WebGL 构建（处理 `.gz` / `.br` 的 `Content-Encoding`，普通静态服务器会白屏） |
 
 ```powershell
 .\Tools\Install-AIGameDevMcp.ps1 -ProjectPath D:\git_workSpace\新工程
 ```
 
 装完后打开 Unity，`Window/AI Game Dev`（`Ctrl+Alt+A`）出现即成功；窗口里的 `Server URL` 要写进本机 `~/.codebuddy/mcp.json` 的 `ai-game-developer.url`（端口按工程目录生成，每个工程不同）。
+
+### WebGL 本地预览
+
+```powershell
+python .\Tools\serve_webgl.py D:\git_workSpace\MirrorWaveGame\Builds\WebGL --port 8700
+```
+
+要点：Unity 用 Gzip/Brotli 压缩时产物是 `*.wasm.gz` / `*.data.gz`，必须由服务端返回 `Content-Encoding: gzip` / `br`，否则浏览器解析失败（表现为一直卡加载）。脚本还会按内层扩展名返回正确的 MIME（`.wasm` → `application/wasm`）并禁用缓存，重新构建后刷新即可看到新版本。
+
+工程侧可挂在自己的构建脚本里，例如 MirrorWaveGame 的 `Tools/MirrorWave/构建并本地预览` 菜单：构建完成后自动拉起本脚本并打开浏览器。
 
 ## 变更历史
 
